@@ -144,7 +144,7 @@ abstract class BaseCommand {
 	/**
 	 * Runs the command using the given XrapClient object.
 	 */
-	public void run(XrapClient client) throws UsageException, XrapException {
+	public void run(XrapClient client) throws UsageException, XrapException, InterruptedException {
 		XrapRequest request = buildRequest();
 		if (printRequestHeader || printRequestBody)
 			System.out.println("\n\n");

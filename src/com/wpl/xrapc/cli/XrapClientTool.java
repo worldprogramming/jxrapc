@@ -1,12 +1,7 @@
 package com.wpl.xrapc.cli;
 
 import java.io.ByteArrayOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
-import java.io.Reader;
-import java.io.StringReader;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -15,7 +10,6 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.json.simple.JSONValue;
 
 import com.wpl.xrapc.XrapClient;
 import com.wpl.xrapc.XrapException;
@@ -43,6 +37,9 @@ public class XrapClientTool {
 			formatter.printHelp("xrapc", buildCommandLineOptions(), true);
 		}
 		catch (IOException ex) {
+			System.err.println(ex.getMessage());
+		}
+		catch (InterruptedException ex) {
 			System.err.println(ex.getMessage());
 		}
 	}
@@ -138,7 +135,7 @@ public class XrapClientTool {
 		return resource;
 	}
 	
-	public void run() throws XrapException, UsageException, IOException {
+	public void run() throws XrapException, UsageException, IOException, InterruptedException {
 		XrapClient client = new XrapClient(
 				String.format("tcp://%s:%d", host, port));
 		client.setTimeout(timeoutSeconds);

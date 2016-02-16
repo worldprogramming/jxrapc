@@ -125,7 +125,7 @@ public class XrapClientShell {
 		}
 	}
 	
-	private boolean parseLine(String commandString) throws UsageException, XrapException {
+	private boolean parseLine(String commandString) throws UsageException, XrapException, InterruptedException {
 		CommandTokenizer tok = new CommandTokenizer(commandString);
 		
 		String commandName = tok.nextToken();
@@ -144,7 +144,7 @@ public class XrapClientShell {
 		return false;
 	}
 	
-	private void parseXrapCommand(BaseCommand command, CommandTokenizer tok) throws UsageException, XrapException {
+	private void parseXrapCommand(BaseCommand command, CommandTokenizer tok) throws UsageException, XrapException, InterruptedException {
 		String resource = tok.nextToken();
 		if (resource==null) 
 			throw new UsageException(String.format("Must supply resource with '%s'", command.getName()));

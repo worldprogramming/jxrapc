@@ -3,12 +3,14 @@ package com.wpl.xrapc;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.zeromq.ZMQ;
 
@@ -21,6 +23,8 @@ import org.zeromq.ZMQ;
 public class XrapClient {
 	private ZMQ.Socket sock;
 	private int receiveTimeoutSeconds = 30;
+	private Map<Integer, XrapReply> responseCache = new ConcurrentHashMap<Integer, XrapReply>();
+	private Lock lock = new ReentrantLock(); 
 
 	/**
 	 * Creates a new XrapClient object using a newly created ZMQ context.
@@ -67,7 +71,7 @@ public class XrapClient {
 	 * will describe errors returned by the server, these are not thrown
 	 * as exceptions. 
 	 */
-	public XrapReply send(XrapRequest request) throws XrapException {
+	public XrapReply send(XrapRequest request) throws XrapException, InterruptedException {
 		sendOnly(request);
 		XrapReply response = getResponse(request, receiveTimeoutSeconds, TimeUnit.SECONDS);
 		if (response==null) throw new XrapException("Timeout");
@@ -96,9 +100,15 @@ public class XrapClient {
 		catch (IOException ex) {
 			// shouldn't occur when writing to a ByteArrayOutputStream?
 		}
-		
-		sock.send(new byte[0], ZMQ.SNDMORE);
-		sock.send(baos.toByteArray(), 0);
+
+		try {
+			lock.lock();
+			sock.send(new byte[0], ZMQ.SNDMORE);
+			sock.send(baos.toByteArray(), 0);
+		}
+		finally {
+			lock.unlock();
+		}
 	}
 	
 	private static ZMQ.Socket openAndConnect(ZMQ.Context zmqContext, String endpoint) {
@@ -107,35 +117,49 @@ public class XrapClient {
 		return sock;
 	}
 	
-	private XrapReply getResponse(XrapRequest request) throws XrapException {
+	private XrapReply getResponse(XrapRequest request) throws XrapException, InterruptedException {
 		return getResponse(request, Long.MAX_VALUE, TimeUnit.MILLISECONDS);
 	}
 	
-	private Map<Integer, XrapReply> responseCache = new HashMap<Integer, XrapReply>();
 	
-	private XrapReply getResponse(XrapRequest request, long timeout, TimeUnit unit) throws XrapException {
+	private XrapReply getResponse(XrapRequest request, long timeout, TimeUnit unit) throws XrapException, InterruptedException {
 		XrapReply reply;
-		if ((reply = responseCache.remove(request.getRequestId()))!=null) {
-			return reply;
-		}
+
+		// There are two timeouts. We have to ensure that we return in a time
+		// consistent with the timeout passed as argument. We first have to acquire the
+		// lock. Another thread may have the lock, and may be waiting on a longer
+		// timeout, waiting on the socket. 
 		
 		long timeoutms = unit.toMillis(timeout);
 		while (timeoutms>0) {
 			long loopStart = new java.util.Date().getTime();
-			sock.setReceiveTimeOut((int)Math.min(timeoutms, Integer.MAX_VALUE));
-			
-			byte[] responseBytes = sock.recv();
-			timeoutms -= new java.util.Date().getTime() - loopStart;
-			if (responseBytes==null) {
-				// Timed out, or error?
-				// Not sure how we tell the difference.
-				continue;
+
+			// First see whether the response has already been received, either
+			// by us previously, or by another thread that might also be waiting.
+			if ((reply = responseCache.remove(request.getRequestId()))!=null) {
+				return reply;
 			}
 			
-			// Depending on whether a REQ or DEALER is used, we might get an
-			// empty delimiter frame.
-			if (responseBytes.length==0)
+			byte[] responseBytes;
+			if (!lock.tryLock(timeoutms, TimeUnit.MILLISECONDS)) return null;
+			try {
+				sock.setReceiveTimeOut((int)Math.min(timeoutms, Integer.MAX_VALUE));
 				responseBytes = sock.recv();
+				timeoutms -= new java.util.Date().getTime() - loopStart;
+				if (responseBytes==null) {
+					// Timed out, or error?
+					// Not sure how we tell the difference.
+					continue;
+				}
+				
+				// Depending on whether a REQ or DEALER is used, we might get an
+				// empty delimiter frame.
+				if (responseBytes.length==0)
+					responseBytes = sock.recv();
+			}
+			finally {
+				lock.unlock();
+			}
 			
 			reply = request.parseResponse(responseBytes);
 			if (reply.requestId == request.getRequestId())
@@ -203,6 +227,8 @@ public class XrapClient {
 			}
 			catch (XrapException ex) {
 				this.ex = ex;
+			}
+			catch (InterruptedException ex) {
 			}
 			return response!=null;
 		}
