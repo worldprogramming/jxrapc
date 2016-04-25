@@ -22,7 +22,8 @@ import org.zeromq.ZMQ;
  */
 public class XrapClient {
 	private ZMQ.Socket sock;
-	private int receiveTimeoutSeconds = 30;
+	private long receiveTimeout = 30;
+	private TimeUnit receiveTimeoutUnit = TimeUnit.SECONDS;
 	private Map<Integer, XrapReply> responseCache = new ConcurrentHashMap<Integer, XrapReply>();
 	private Lock lock = new ReentrantLock(); 
 
@@ -59,7 +60,18 @@ public class XrapClient {
 	 * @param seconds The new timeout, in seconds
 	 */
 	public void setTimeout(int seconds) {
-		this.receiveTimeoutSeconds = seconds;
+		this.receiveTimeout = seconds;
+		this.receiveTimeoutUnit = TimeUnit.SECONDS;
+	}
+	
+	/**
+	 * Sets the timeout for the request, in seconds.
+	 * This is 30 by default.
+	 * @param seconds The new timeout, in seconds
+	 */
+	public void setTimeout(long count, TimeUnit units) {
+		this.receiveTimeout = count;
+		this.receiveTimeoutUnit = units;
 	}
 	
 	/**
@@ -73,7 +85,7 @@ public class XrapClient {
 	 */
 	public XrapReply send(XrapRequest request) throws XrapException, InterruptedException {
 		sendOnly(request);
-		XrapReply response = getResponse(request, receiveTimeoutSeconds, TimeUnit.SECONDS);
+		XrapReply response = getResponse(request, receiveTimeout, receiveTimeoutUnit);
 		if (response==null) throw new XrapException("Timeout");
 		return response;
 	}
